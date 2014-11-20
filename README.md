@@ -25,7 +25,7 @@ The hosts file is an *ini* file structured in this way:
     [group_name]
     host_name
     check=<check if process with this name is active>
-    faiulre=<run this command in case of failure and retry>
+    failure=<run this command in case of failure and retry>
 ```
 
 ## TODO
