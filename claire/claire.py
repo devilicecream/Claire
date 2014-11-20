@@ -1,9 +1,7 @@
 __author__ = 'walter'
 import sys
-
 from .config import Client
 from clint.textui import colored, indent, puts
-
 
 Parser = None
 try:
