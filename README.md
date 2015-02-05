@@ -16,11 +16,11 @@ $ claire stats
 ## Daemon
 To run Claire as a daemon, you need to have super user privileges:
 ```bash
-# claire stats --daemon
+$ sudo claire stats --daemon
 ```
 To stop the daemon:
 ```bash
-# claire stats --stop-daemon
+$ sudo claire stats --stop-daemon
 ```
 ### Config file
 Claire uses by default the config file in **/etc/claire/config**.
