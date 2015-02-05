@@ -1,6 +1,6 @@
 [default]
 pidfile=/etc/claire/claire.pid
-interval=60
+interval=300
 
 [reporter]
 name=email

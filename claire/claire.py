@@ -3,7 +3,7 @@ from .group import Group
 from .reporters import Reporters
 from .daemon import Daemon
 from time import sleep
-import sys
+import sys, os
 import logging
 import logging.config
 
@@ -11,7 +11,7 @@ import logging.config
 DEFAULT_CONFIG = "/etc/claire/config"
 DEFAULT_HOSTS = "/etc/claire/hosts"
 DEFAULT_PIDFILE = "/etc/claire/claire.pid"
-DEFAULT_INTERVAL = 30
+DEFAULT_INTERVAL = 300
 
 Parser = None
 try:
@@ -29,6 +29,12 @@ def get_or_none(self, section, value, func_name=None, **kw):
         return None
 
 Parser.ConfigParser.get_or_none = get_or_none
+
+
+def exit_if_not_sudo():
+    if 'SUDO_UID' not in os.environ.keys():
+        print "Claire needs you to be super user to run!"
+        sys.exit(1)
 
 
 def parse_config(conf, hosts):
@@ -67,16 +73,20 @@ def stats_command(hosts=DEFAULT_HOSTS, conf=DEFAULT_CONFIG, group=None, daemon=F
     config = parse_config(conf, hosts)
 
     if daemon:
+        exit_if_not_sudo()
+
         def daemonized(config, group):
             while 1:
                 do_stats(config, group, daemon=True)
                 sleep(config['interval'])
+
         daemon = Daemon(config['pidfile'])
         daemon.func = daemonized
         daemon.args = {'config': config, 'group': group}
         print("Starting Claire as an angel...")
         daemon.start()
     elif stop_daemon:
+        exit_if_not_sudo()
         daemon = Daemon('/etc/claire/claire.pid')
         print("Killing the angel Claire...")
         daemon.stop()
