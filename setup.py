@@ -20,7 +20,6 @@ dependency_links = []
 install_requires=[
     "scriptine",
     "paramiko",
-    "clint"
     ]
 
 setup(

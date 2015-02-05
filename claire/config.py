@@ -1,5 +1,9 @@
 import paramiko, os
 
+STATUS_UNTESTED = 0
+STATUS_OK = 1
+STATUS_BAD = -1
+
 
 class Client(paramiko.SSHClient):
     def __init__(self, *args, **kw):
@@ -24,3 +28,11 @@ class Client(paramiko.SSHClient):
                     key = 'username'
                 cfg[key] = user_config[k] if k != 'port' else int(user_config[k])
         return super(Client, self).connect(**cfg)
+
+
+def pretty(obj):
+    if isinstance(obj, list):
+        return "\n" + str.join("", ["%s\n" % pretty(o) for o in obj])
+    if isinstance(obj, dict):
+        return str.join("", ["\t> %s - %s\n" % (key, pretty(value)) for key, value in obj.items()])
+    return obj

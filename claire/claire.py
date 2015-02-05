@@ -1,93 +1,108 @@
 __author__ = 'walter'
+from .group import Group
+from .reporters import Reporters
+from .daemon import Daemon
+from time import sleep
 import sys
-from .config import Client
-from clint.textui import colored, indent, puts
+import logging
+import logging.config
+
+
+DEFAULT_CONFIG = "/etc/claire/config"
+DEFAULT_HOSTS = "/etc/claire/hosts"
+DEFAULT_PIDFILE = "/etc/claire/claire.pid"
+DEFAULT_INTERVAL = 30
 
 Parser = None
 try:
     import ConfigParser as Parser
-except:
+except Exception:
     import configparser as Parser
 
 
-def cprint(string, color=colored.clean, indentation=0, quote=""):
-    with indent(indentation, quote=color(quote)):
-        puts(color(string))
-
-
-def check_section(config, section):
-    cprint("Group %s" % section, colored.clean, 2, quote=" - ")
-    items = config.items(section)
-    success = retry = fail = 0
-    servers = [i[0] for i in items if i[1] is None]
-    check = dict(items).get('check')
-    failure = dict(items).get('failure', None)
-
-    def check_server(server, failures=0):
-        client = Client()
-        try:
-            client.connect(host=server)
-            stdin, stdout, stderr = client.exec_command('ps aux | grep %s' % check)
-        except Exception as e:
-            cprint('unreachable', colored.red, 4, quote='    [%s] ' % server)
-            return 0, 0, 1
-
-        if len(stdout.readlines()) > 2:
-            cprint('active', colored.green, 4, quote='    [%s] (%s) ' % (server, check))
-            return 1, failures, 0
-        else:
-            cprint('non active', colored.red, 4, quote='    [%s] (%s) ' % (server, check))
-            failures += 1
-            if failure is not None and failures < 3:
-                try:
-                    client.exec_command(failure)
-                except Exception as e:
-                    cprint('unreachable', colored.red, 4, quote='    [%s] ' % server)
-                    return 0, 0, 1
-                cprint("Failure command retry #%s" % str(failures), colored.yellow, 4, quote='    [%s] ' % server)
-                return check_server(server, failures)
-            return 0, failures, 1
-
-    for srv in servers:
-        success, retry, fail = check_server(srv, failures=0)
-    return len(servers), success, retry, fail
-
-
-def stats_command(hosts="/etc/claire/hosts", group=None):
-    """Retrieves stats from servers in the hosts file.
-    If a --group is specified, it retrieves stats only for the specified group"""
-    groups = servers = success = fail = retry = 0
+def get_or_none(self, section, value, func_name=None, **kw):
     try:
-        stream = file(hosts, 'r')
-        config = Parser.ConfigParser(allow_no_value=True)
-        config.readfp(stream)
-        sections = config.sections()
+        if func_name:
+            return getattr(self, func_name)(section, value, **kw)
+        return self.get(section, value, **kw)
+    except Exception:
+        return None
+
+Parser.ConfigParser.get_or_none = get_or_none
+
+
+def parse_config(conf, hosts):
+    config = {}
+    try:
+        config_stream = file(conf, 'r')
+        configuration = Parser.ConfigParser(allow_no_value=True)
+        configuration.readfp(config_stream)
+        reporter = Reporters.get(configuration.get('reporter', 'name'))
+        config['pidfile'] = configuration.get_or_none('default', 'pidfile') or DEFAULT_PIDFILE
+        config['interval'] = configuration.get_or_none('default', 'interval', func='getint') or DEFAULT_INTERVAL
+        config['reporter'] = reporter(configuration)
     except Exception as e:
-        cprint("Error in hosts file: %s" % str(e), colored.red, 1)
+        print("Error in config file: %s" % str(e))
         sys.exit(1)
 
-    if group is not None and group in sections:
-        groups = 1
-        servers, success, retry, fail = check_section(config, group)
-    else:
-        for section in sections:
-            groups += 1
-            _servers, _success, _retry, _fail = check_section(config, section)
-            servers += _servers
-            success += _success
-            retry += _retry
-            fail += _fail
+    try:
+        hosts_stream = file(hosts, 'r')
+        config['hosts'] = Parser.ConfigParser(allow_no_value=True)
+        config['hosts'].readfp(hosts_stream)
+    except Exception as e:
+        print("Error in hosts file: %s" % str(e))
+        sys.exit(1)
 
-    result_string = "Results:     groups=%s     servers=%s     success=%s     fail=%s     retry=%s\n" \
-                    % (groups, servers, success, fail, retry)
-    cprint("-" * len(result_string), indentation=1)
-    if fail > 0:
-        color = colored.red
-    elif retry > 0:
-        color = colored.yellow
+    return config
+
+
+def stats_command(hosts=DEFAULT_HOSTS, conf=DEFAULT_CONFIG, group=None, daemon=False, stop_daemon=False):
+    """Retrieves stats from servers in the hosts file.
+    If a --group is specified, it retrieves stats only for the specified group.
+    If --daemon, it executes as a daemon, using the timing specified in config file.
+    Otherwise, it only executes once.
+    If --stop-daemon, it kills the previously created daemon.
+    """
+    logging.config.fileConfig(conf)
+    config = parse_config(conf, hosts)
+
+    if daemon:
+        def daemonized(config, group):
+            while 1:
+                do_stats(config, group, daemon=True)
+                sleep(config['interval'])
+        daemon = Daemon(config['pidfile'])
+        daemon.func = daemonized
+        daemon.args = {'config': config, 'group': group}
+        print("Starting Claire as an angel...")
+        daemon.start()
+    elif stop_daemon:
+        daemon = Daemon('/etc/claire/claire.pid')
+        print("Killing the angel Claire...")
+        daemon.stop()
     else:
-        color = colored.green
-    cprint(result_string, color, 1)
+        do_stats(config, group, daemon=False)
+
+
+def do_stats(config, group_name, daemon):
+    log = logging.getLogger('Claire')
+    sections = config['hosts'].sections()
+
+    if group_name:
+        if group_name in sections:
+            group = Group(config, group_name)
+            group.test()
+            if not daemon:
+                print group
+        else:
+            log.critical("Group %s is not present in the hosts file" % group_name)
+            sys.exit(1)
+    else:
+        for group_name in sections:
+            group = Group(config, group_name)
+            group.test()
+            if not daemon:
+                print group
 
 
 def main():
