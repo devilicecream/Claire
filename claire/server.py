@@ -36,6 +36,7 @@ class Server(object):
         else:
             log.warning("* Server %s DOWN. Reporting" % self.hostname)
             self.config['reporter'].report_server(self)
+        client.close()
         return self.status
 
     def __repr__(self):

@@ -1,7 +1,11 @@
 __author__ = 'walter'
 from .config import STATUS_UNTESTED, STATUS_OK, STATUS_BAD, pretty
 from collections import OrderedDict
+from time import sleep
 import re
+import logging
+
+log = logging.getLogger('Claire')
 
 
 class Process(object):
@@ -11,6 +15,7 @@ class Process(object):
         self.active_instances = 0
         self.status = STATUS_UNTESTED
         self.failure = failure
+        self.retries = 0
         self.info = []
 
     def test(self, client):
@@ -44,9 +49,12 @@ class Process(object):
                                            Command=command.replace("\n", ""))
                     self.info.append(instance)
 
-        if self.status == STATUS_BAD:
-            # TODO: try the failure command
-            pass
+        if self.status == STATUS_BAD and self.failure and self.retries < 1:
+            self.retries += 1
+            log.warning('* Retrying process %s with command `%s`' % (self.name, self.failure))
+            client.exec_command(self.failure)
+            sleep(3)
+            return self.test(client)
         return self.status
 
     def __repr__(self):
